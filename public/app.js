@@ -1,36 +1,42 @@
 let socket;
-let peerConnection;
-let dataChannel;
-let iceCandidatesQueue = [];  // ICE candidate'leri tutmak için bir sıra (queue)
+let peerConnections = {};
+let dataChannels = {};
+let iceCandidatesQueue = {};
+let nickname = '';
 
 // WebSocket bağlantısını başlat
 document.getElementById('connectBtn').onclick = () => {
-  socket = new WebSocket('ws://localhost:8080'); // Yerel IP adresini kullan
+  nickname = document.getElementById('nickname').value.trim();
+  if (!nickname) {
+    alert('Lütfen bir nickname girin.');
+    return;
+  }
+
+  socket = new WebSocket('ws://localhost:8080');
 
   socket.onopen = () => {
     console.log('Bağlandı');
+    socket.send(JSON.stringify({ type: 'join', nickname }));
   };
 
   socket.onmessage = (event) => {
-    if (event.data instanceof Blob) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const textData = reader.result;
-        try {
-          const data = JSON.parse(textData);  // JSON verisini parse et
-          handleSignalingData(data);  // Gelen mesajı işle
-        } catch (e) {
-          console.error('Mesaj JSON formatında değil', e);
-        }
-      };
-      reader.readAsText(event.data);
-    } else {
-      try {
-        const data = JSON.parse(event.data);  // JSON formatındaki mesajları parse et
-        handleSignalingData(data);  // Gelen mesajı işle
-      } catch (e) {
-        console.error('Mesaj JSON formatında değil', e);
-      }
+    const data = JSON.parse(event.data);
+    if (data.type === 'chat-history') {
+      displayChatHistory(data.history);
+    } else if (data.type === 'new-participant') {
+      console.log(`${data.nickname} katıldı`);
+      createOffer(data.nickname);
+    } else if (data.type === 'offer') {
+      handleOffer(data);
+    } else if (data.type === 'answer') {
+      handleAnswer(data);
+    } else if (data.type === 'candidate') {
+      handleCandidate(data);
+    } else if (data.type === 'message') {
+      document.getElementById('chatBox').innerHTML += `<p class="message receiver"><strong>${data.nickname}:</strong> ${data.text}</p>`;
+    } else if (data.type === 'participant-left') {
+      console.log(`${data.nickname} ayrıldı`);
+      closeConnection(data.nickname);
     }
   };
 
@@ -39,168 +45,140 @@ document.getElementById('connectBtn').onclick = () => {
   };
 };
 
-// Teklif gönderme butonuna tıklanınca WebRTC offer oluştur ve gönder
-document.getElementById('sendOfferBtn').onclick = async () => {
-  if (socket && socket.readyState === WebSocket.OPEN) {
-    const offerMessage = await createOffer();
-    socket.send(JSON.stringify(offerMessage));
-    console.log('Teklif mesajı gönderildi:', offerMessage);
-  }
-};
+// Teklif oluştur ve gönder
+async function createOffer(targetNickname) {
+  const peerConnection = new RTCPeerConnection();
+  peerConnections[targetNickname] = peerConnection;
 
-// WebRTC offer oluştur
-async function createOffer() {
-  peerConnection = new RTCPeerConnection();
+  const dataChannel = peerConnection.createDataChannel("chat");
+  dataChannels[targetNickname] = dataChannel;
 
-  // Data channel oluştur
-  dataChannel = peerConnection.createDataChannel("chat");
   dataChannel.onopen = () => {
     console.log('Data channel açıldı!');
   };
 
   dataChannel.onmessage = (event) => {
-    document.getElementById('chatBox').innerHTML += `<p>Karşıdan gelen: ${event.data}</p>`;
+    const message = JSON.parse(event.data);
+    document.getElementById('chatBox').innerHTML += `<p class="message receiver"><strong>${message.nickname}:</strong> ${message.text}</p>`;
   };
 
-  // ICE candidate oluştur ve signaling'e gönder
   peerConnection.onicecandidate = (event) => {
     if (event.candidate) {
       console.log('ICE candidate oluşturuldu:', event.candidate);
       socket.send(JSON.stringify({
         type: 'candidate',
-        candidate: event.candidate
+        candidate: event.candidate,
+        target: targetNickname
       }));
     }
   };
 
-  // P2P bağlantı durumu değiştiğinde dinle
-  peerConnection.onconnectionstatechange = (event) => {
-    if (peerConnection.connectionState === 'connected') {
-      console.log('P2P bağlantı kuruldu!');
-    } else if (peerConnection.connectionState === 'failed') {
-      console.log('P2P bağlantı başarısız oldu.');
-    } else {
-      console.log('Bağlantı durumu:', peerConnection.connectionState);
-    }
-  };
-
-  // Teklif oluştur
   const offer = await peerConnection.createOffer();
   await peerConnection.setLocalDescription(offer);
 
-  return {
-    type: 'offer',
-    sdp: offer.sdp
-  };
-}
-
-// WebRTC answer oluştur
-async function createAnswer(offer) {
-  if (peerConnection.signalingState !== 'have-remote-offer') {
-    console.error('Hatalı durumda createAnswer çağrıldı:', peerConnection.signalingState);
-    return;
-  }
-
-  // Cevap oluştur
-  const answer = await peerConnection.createAnswer();
-  await peerConnection.setLocalDescription(answer);
-
-  console.log('Answer oluşturuldu ve gönderildi:', answer);
-
   socket.send(JSON.stringify({
-    type: 'answer',
-    sdp: answer.sdp
+    type: 'offer',
+    sdp: offer.sdp,
+    target: targetNickname,
+    nickname
   }));
 }
 
-// Gelen signaling mesajlarını işleyen fonksiyon
-async function handleSignalingData(data) {
-  if (data.type === 'offer') {
-    console.log('Offer alındı:', data.sdp);
+// Teklif işleme
+async function handleOffer(data) {
+  const peerConnection = new RTCPeerConnection();
+  peerConnections[data.nickname] = peerConnection;
 
-    if (!peerConnection) {
-      peerConnection = new RTCPeerConnection();
-      
-      // Gelen data channel'ı al
-      peerConnection.ondatachannel = (event) => {
-        dataChannel = event.channel;
+  peerConnection.ondatachannel = (event) => {
+    const dataChannel = event.channel;
+    dataChannels[data.nickname] = dataChannel;
 
-        dataChannel.onopen = () => {
-          console.log('Data channel açıldı!');
-        };
+    dataChannel.onopen = () => {
+      console.log('Data channel açıldı!');
+    };
 
-        dataChannel.onmessage = (event) => {
-          document.getElementById('chatBox').innerHTML += `<p>Karşıdan gelen: ${event.data}</p>`;
-        };
-      };
+    dataChannel.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      document.getElementById('chatBox').innerHTML += `<p class="message receiver"><strong>${message.nickname}:</strong> ${message.text}</p>`;
+    };
+  };
 
-      // ICE candidate oluştur ve signaling'e gönder
-      peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-          console.log('ICE candidate oluşturuldu:', event.candidate);
-          socket.send(JSON.stringify({
-            type: 'candidate',
-            candidate: event.candidate
-          }));
-        }
-      };
-
-      // P2P bağlantı durumu değiştiğinde dinle
-      peerConnection.onconnectionstatechange = (event) => {
-        if (peerConnection.connectionState === 'connected') {
-          console.log('P2P bağlantı kuruldu!');
-        } else if (peerConnection.connectionState === 'failed') {
-          console.log('P2P bağlantı başarısız oldu.');
-        } else {
-          console.log('Bağlantı durumu:', peerConnection.connectionState);
-        }
-      };
+  peerConnection.onicecandidate = (event) => {
+    if (event.candidate) {
+      console.log('ICE candidate oluşturuldu:', event.candidate);
+      socket.send(JSON.stringify({
+        type: 'candidate',
+        candidate: event.candidate,
+        target: data.nickname
+      }));
     }
+  };
 
-    await peerConnection.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: data.sdp }));
+  await peerConnection.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: data.sdp }));
+  const answer = await peerConnection.createAnswer();
+  await peerConnection.setLocalDescription(answer);
 
-    // remoteDescription ayarlandığında sıradaki ICE candidate'leri ekle
-    if (iceCandidatesQueue.length > 0) {
-      console.log('Biriken ICE candidate\'ler ekleniyor.');
-      for (const candidate of iceCandidatesQueue) {
-        await peerConnection.addIceCandidate(candidate);
-      }
-      iceCandidatesQueue = [];  // Sırayı temizle
+  socket.send(JSON.stringify({
+    type: 'answer',
+    sdp: answer.sdp,
+    target: data.nickname,
+    nickname
+  }));
+}
+
+// Cevap işleme
+async function handleAnswer(data) {
+  const peerConnection = peerConnections[data.nickname];
+  if (peerConnection) {
+    await peerConnection.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: data.sdp }));
+  }
+}
+
+// ICE candidate işleme
+async function handleCandidate(data) {
+  const peerConnection = peerConnections[data.target];
+  if (peerConnection) {
+    await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+  } else {
+    if (!iceCandidatesQueue[data.target]) {
+      iceCandidatesQueue[data.target] = [];
     }
+    iceCandidatesQueue[data.target].push(new RTCIceCandidate(data.candidate));
+  }
+}
 
-    // Teklifi aldıktan sonra cevap oluştur
-    createAnswer(data.sdp);
-
-  } else if (data.type === 'answer') {
-    console.log('Answer alındı:', data.sdp);
-    if (peerConnection.signalingState === 'have-local-offer') {
-      await peerConnection.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: data.sdp }));
-    } else {
-      console.warn('Yanlış durumda setRemoteDescription çalıştırıldı:', peerConnection.signalingState);
-    }
-
-  } else if (data.type === 'candidate') {
-    console.log('ICE candidate alındı:', data.candidate);
-
-    if (peerConnection.remoteDescription) {
-      // remoteDescription ayarlandıysa ICE candidate ekle
-      await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-    } else {
-      // remoteDescription ayarlandıktan sonra eklenmek üzere sıraya al
-      console.log('ICE candidate remoteDescription ayarlanmadığı için sıraya alındı.');
-      iceCandidatesQueue.push(new RTCIceCandidate(data.candidate));
-    }
+// Bağlantıyı kapatma
+function closeConnection(nickname) {
+  if (peerConnections[nickname]) {
+    peerConnections[nickname].close();
+    delete peerConnections[nickname];
+  }
+  if (dataChannels[nickname]) {
+    dataChannels[nickname].close();
+    delete dataChannels[nickname];
   }
 }
 
 // Mesaj gönderme butonuna tıklanınca veri gönder
 document.getElementById('sendMsgBtn').onclick = () => {
-  if (dataChannel && dataChannel.readyState === 'open') {
-    const msg = document.getElementById('chatInput').value;
-    dataChannel.send(msg);
-    document.getElementById('chatBox').innerHTML += `<p>Sen: ${msg}</p>`;
-    document.getElementById('chatInput').value = ''; // Mesajı temizle
-  } else {
-    console.error('Data channel henüz açık değil!');
+  const msg = document.getElementById('chatInput').value.trim();
+  if (!msg) {
+    alert('Boş mesaj gönderilemez.');
+    return;
   }
+
+  const message = { type: 'message', nickname, text: msg };
+
+  socket.send(JSON.stringify(message));
+
+  document.getElementById('chatBox').innerHTML += `<p class="message sender"><strong>${nickname}:</strong> ${msg}</p>`;
+  document.getElementById('chatInput').value = '';
 };
+
+// Sohbet geçmişini görüntüleme
+function displayChatHistory(history) {
+  const chatBox = document.getElementById('chatBox');
+  history.forEach(message => {
+    chatBox.innerHTML += `<p class="message receiver"><strong>${message.nickname}:</strong> ${message.text}</p>`;
+  });
+}

@@ -1,0 +1,26 @@
+body {
+    font-family: "Inter", "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif !important;
+    background-color: #202127 !important;
+    color: #d2d8e2 !important;
+    margin: 0;
+    padding: 20px;
+    scroll-behavior: smooth;
+}
+
+.message {
+    padding: 10px;
+    margin: 5px 0;
+    border-radius: 5px;
+}
+
+.message.sender {
+    background-color: #007bff;
+    color: white;
+    text-align: right;
+}
+
+.message.receiver {
+    background-color: #f1f1f1;
+    color: black;
+    text-align: left;
+}
