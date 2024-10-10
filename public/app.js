@@ -182,3 +182,30 @@ function displayChatHistory(history) {
     chatBox.innerHTML += `<p class="message receiver"><strong>${message.nickname}:</strong> ${message.text}</p>`;
   });
 }
+
+document.getElementById('chatBox').innerHTML += `<p class="message receiver animate__animated animate__fadeIn"><strong>${data.nickname}:</strong> ${data.text}</p>`;
+
+// Listen for Enter key in the input field
+function sendMessageOnEnter(event) {
+  if (event.key === "Enter") {
+    sendMessage();
+  }
+}
+
+// Modified send message function
+document.getElementById('sendMsgBtn').onclick = sendMessage;
+
+function sendMessage() {
+  const msg = document.getElementById('chatInput').value.trim();
+  if (!msg) {
+    alert('Boş mesaj gönderilemez.');
+    return;
+  }
+
+  const message = { type: 'message', nickname, text: msg };
+
+  socket.send(JSON.stringify(message));
+
+  document.getElementById('chatBox').innerHTML += `<p class="message sender"><strong>${nickname}:</strong> ${msg}</p>`;
+  document.getElementById('chatInput').value = '';
+}

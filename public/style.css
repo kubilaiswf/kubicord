@@ -1,26 +1,75 @@
 body {
     font-family: "Inter", "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif !important;
-    background-color: #202127 !important;
-    color: #d2d8e2 !important;
+    background: linear-gradient(135deg, #243642, #387478); /* Gradient background */
+    color: #fff !important;
     margin: 0;
     padding: 20px;
     scroll-behavior: smooth;
 }
 
+.container {
+    background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent background */
+    border-radius: 10px;
+    padding: 20px;
+}
+
 .message {
-    padding: 10px;
-    margin: 5px 0;
-    border-radius: 5px;
+    padding: 15px;
+    margin: 10px 0;
+    border-radius: 20px;
+    max-width: 75%;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* Add shadow */
 }
 
 .message.sender {
-    background-color: #007bff;
+    background-color: #387478; /* Updated to match the theme's greenish-blue */
     color: white;
     text-align: right;
+    border-bottom-right-radius: 0;
 }
 
 .message.receiver {
-    background-color: #f1f1f1;
+    background-color: #243642; /* Updated to match the theme's dark blue */
     color: black;
     text-align: left;
+    border-bottom-left-radius: 0;
+}
+
+#chatBox {
+    background-color: #E2F1E7;
+    border-radius: 10px;
+    padding: 20px;
+    height: 400px; /* Increase height */
+    overflow-y: hidden;
+}
+
+.input-group {
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+.input-group .form-control {
+    border-top-left-radius: 20px;
+    border-bottom-left-radius: 20px;
+    border-right: none;
+}
+
+.input-group .input-group-append {
+    background-color: #170d30;
+    border-top-right-radius: 20px;
+    border-bottom-right-radius: 20px;
+    display: flex;
+    align-items: center;
+    padding: 3px;
+}
+
+.input-group .input-group-append .btn {
+    border: none;
+    background-color: transparent;
+    color: white;
+}
+
+.input-group .input-group-append .btn i {
+    font-size: 1.2rem;
 }
